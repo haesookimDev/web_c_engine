@@ -39,10 +39,18 @@ type LoggerConfig struct {
 	Level string `yaml:"level"`
 }
 
+type EmbedderConfig struct {
+	Type        string `yaml:"type"`
+	APIEndpoint string `yaml:"api_endpoint,omitempty"`
+	APIKey      string `yaml:"api_key,omitempty"`
+	ModelName   string `yaml:"model_name,omitempty"`
+}
+
 type Config struct {
-	Crawler CrawlerConfig `yaml:"crawler"`
-	Milvus  MilvusConfig  `yaml:"milvus"`
-	Logger  LoggerConfig  `yaml:"logger"`
+	Crawler  CrawlerConfig  `yaml:"crawler"`
+	Milvus   MilvusConfig   `yaml:"milvus"`
+	Logger   LoggerConfig   `yaml:"logger"`
+	Embedder EmbedderConfig `yaml:"embedder"`
 }
 
 // LoadConfig loads configuration from the given path.
@@ -57,6 +65,13 @@ func LoadConfig(path string) (*Config, error) {
 	err = yaml.Unmarshal(data, cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.Milvus.EmbeddingDimension == 0 {
+		cfg.Milvus.EmbeddingDimension = 768
+	}
+	if cfg.Embedder.Type == "" {
+		cfg.Embedder.Type = "dummy"
 	}
 
 	return cfg, nil
