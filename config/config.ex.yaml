@@ -1,0 +1,27 @@
+# config/config.yaml
+crawler:
+  seed_urls:
+    - "https://example.com"
+    - "https://another-example.com"
+  max_depth: 3 # 최대 크롤링 깊이
+  delay_ms: 1000 # 요청 간 기본 딜레이 (밀리초)
+  max_concurrency: 5 # 동시 크롤링 작업자 수
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+  # 광고 링크로 의심되는 URL 패턴
+  ad_link_patterns:
+    - "adexample.com"
+  # 본문 추출 시 중요하게 고려할 태그
+  content_tags:
+    - "article"
+  # 크롤링 제외할 도메인
+  excluded_domains:
+    - "example.com"
+
+milvus:
+  host: "localhost"
+  port: "19530"
+  collection_name: "example"
+
+logger:
+  level: "info"
