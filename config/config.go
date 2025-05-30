@@ -18,9 +18,21 @@ type CrawlerConfig struct {
 }
 
 type MilvusConfig struct {
-	Host           string `yaml:"host"`
-	Port           string `yaml:"port"`
-	CollectionName string `yaml:"collection_name"`
+	Host                  string `yaml:"host"`
+	Port                  string `yaml:"port"`
+	CollectionName        string `yaml:"collection_name"`
+	EmbeddingDimension    int    `yaml:"embedding_dimension"`
+	MaxLengthURL          int    `yaml:"max_length_url"`
+	MaxLengthHTML         int    `yaml:"max_length_html"`
+	MaxLengthContent      int    `yaml:"max_length_content"`
+	MaxLengthTitle        int    `yaml:"max_length_title"`
+	MaxLengthMetaDesc     int    `yaml:"max_length_meta_desc"`
+	MaxLengthCanonicalURL int    `yaml:"max_length_canonical_url"`
+	MaxLengthLanguage     int    `yaml:"max_length_language"`
+	MaxLengthHeadings     int    `yaml:"max_length_headings"`
+	IndexType             string `yaml:"index_type"`
+	MetricType            string `yaml:"metric_type"`
+	Nlist                 int    `yaml:"nlist"`
 }
 
 type LoggerConfig struct {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time" // For timeout context if needed
 
 	"crawlengine/config"
 	"crawlengine/crawler"
@@ -20,9 +21,13 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	log.Printf("Logger level set to: %s (Note: Using standard log, implement advanced logger if needed)", cfg.Logger.Level)
+	log.Printf("Logger level set to: %s", cfg.Logger.Level)
 
-	milvusStorer, err := storage.NewMilvusStorer(&cfg.Milvus)
+	// Context for Milvus initialization (e.g., with a timeout)
+	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second) // 30-second timeout for Milvus setup
+	defer initCancel()
+
+	milvusStorer, err := storage.NewMilvusStorer(initCtx, &cfg.Milvus) // Pass context
 	if err != nil {
 		log.Fatalf("Failed to initialize Milvus storer: %v", err)
 	}
@@ -30,18 +35,19 @@ func main() {
 
 	cr := crawler.NewCrawler(&cfg.Crawler, milvusStorer)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Main context for the crawler itself
+	crawlerCtx, crawlerCancel := context.WithCancel(context.Background())
+	defer crawlerCancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigChan
 		log.Printf("Received signal: %s. Shutting down...", sig)
-		cancel()
+		crawlerCancel() // Signal crawler workers to stop
 	}()
 
-	cr.Start(ctx)
+	cr.Start(crawlerCtx)
 
 	log.Println("Crawling engine finished or was interrupted.")
 }

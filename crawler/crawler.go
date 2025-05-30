@@ -95,15 +95,8 @@ func (c *Crawler) Start(ctx context.Context) {
 		c.taskQueue <- CrawlTask{URL: seedURL, Depth: 0}
 		c.markVisited(seedURL)
 	}
-
-	// Wait for initial tasks to be queued, then consider closing queue if no more seeds
-	// Or, more robustly, manage queue closing when all workers are idle and queue is empty.
-	// For simplicity, we'll let workers run until context is done or queue naturally empties
-	// and no new tasks are generated for a while. A more sophisticated shutdown is needed for long-running crawlers.
-
 	c.wg.Wait()
-	close(c.taskQueue) // Close queue only after all producers (initial seeds, link extractors) are done.
-	// This basic example closes it after initial seeds. A better approach is needed.
+	close(c.taskQueue)
 	log.Println("Crawler finished all tasks.")
 }
 
@@ -167,30 +160,93 @@ func (c *Crawler) crawlPage(ctx context.Context, task CrawlTask) {
 	mainContent := ExtractMainContent(doc, c.Config.ContentTags)
 	if mainContent == "" {
 		log.Printf("Could not extract main content from %s", task.URL)
-		// Decide if you still want to store pages with no extracted "main" content
 	}
 
-	// ID Generation: Using main content hash is generally better for semantic uniqueness.
-	contentHash := GenerateContentHash(mainContent) // Or htmlString if preferred
+	contentHash := GenerateContentHash(mainContent)
 
-	title := doc.Find("title").First().Text()
+	title := strings.TrimSpace(doc.Find("title").First().Text())
 	metaDescription, _ := doc.Find("meta[name='description']").Attr("content")
-	// You can add more meta tag extractions here (OpenGraph, etc.)
+	metaDescription = strings.TrimSpace(metaDescription)
+
+	canonicalURL, _ := doc.Find("link[rel='canonical']").Attr("href")
+	canonicalURL = strings.TrimSpace(canonicalURL)
+	if canonicalURL != "" {
+		parsedCanonical, err := NormalizeURL(parsedURL, canonicalURL)
+		if err == nil {
+			canonicalURL = parsedCanonical
+		} else {
+			log.Printf("Could not normalize canonical URL '%s' for page %s: %v", canonicalURL, task.URL, err)
+			canonicalURL = ""
+		}
+	}
+
+	language, _ := doc.Find("html").Attr("lang")
+	language = strings.TrimSpace(language)
+
+	var publicationTimestamp int64
+	pubDateStr, _ := doc.Find("meta[property='article:published_time']").Attr("content")
+	if pubDateStr == "" {
+		pubDateStr, _ = doc.Find("meta[name='pubdate']").Attr("content")
+	}
+	if pubDateStr == "" {
+		pubDateStr, _ = doc.Find("meta[name='sailthru.date']").Attr("content")
+	}
+	if pubDateStr == "" {
+		doc.Find("time[datetime]").EachWithBreak(func(i int, s *goquery.Selection) bool {
+			dt, exists := s.Attr("datetime")
+			if exists {
+				pubDateStr = dt
+				return false
+			}
+			return true
+		})
+	}
+	if pubDateStr != "" {
+		parsedTime, err := time.Parse(time.RFC3339, pubDateStr)
+		if err == nil {
+			publicationTimestamp = parsedTime.Unix()
+		} else {
+			parsedTime, err = time.Parse("2006-01-02T15:04:05Z", pubDateStr)
+			if err == nil {
+				publicationTimestamp = parsedTime.Unix()
+			} else {
+				parsedTime, err = time.Parse("2006-01-02", pubDateStr)
+				if err == nil {
+					publicationTimestamp = parsedTime.Unix()
+				} else {
+					log.Printf("Could not parse publication date string '%s' for %s: %v", pubDateStr, task.URL, err)
+				}
+			}
+		}
+	}
+
+	var headingsBuilder strings.Builder
+	doc.Find("h1, h2, h3, h4, h5, h6").Each(func(i int, s *goquery.Selection) {
+		headingsBuilder.WriteString(strings.TrimSpace(s.Text()))
+		headingsBuilder.WriteString(" | ")
+	})
+	headingsText := strings.TrimSuffix(headingsBuilder.String(), " | ")
+	var contentVector []float32
 
 	webDoc := &storage.WebDocument{
-		HashID:          contentHash,
-		URL:             task.URL,
-		HTMLSource:      htmlString,
-		MainContent:     mainContent,
-		Title:           strings.TrimSpace(title),
-		MetaDescription: strings.TrimSpace(metaDescription),
-		CrawledAt:       time.Now().UTC(),
+		HashID:               contentHash,
+		URL:                  task.URL,
+		HTMLSource:           htmlString,
+		MainContent:          mainContent,
+		Title:                title,
+		MetaDescription:      metaDescription,
+		CanonicalURL:         canonicalURL,
+		Language:             language,
+		PublicationTimestamp: publicationTimestamp,
+		HeadingsText:         headingsText,
+		CrawledAt:            time.Now().UTC(),
+		ContentVector:        contentVector,
 	}
 
 	if err := c.Storer.StoreDocument(ctx, webDoc); err != nil {
 		log.Printf("Error storing document for %s (ID: %s): %v", task.URL, contentHash, err)
 	} else {
-		log.Printf("Successfully processed and sent to store: %s (ID: %s)", task.URL, contentHash)
+		// Log success (already done in StoreDocument in this version)
 	}
 
 	if task.Depth < c.Config.MaxDepth {
